@@ -46,15 +46,26 @@ function setLoading(loading) {
   fetchBtn.disabled = loading;
 }
 
-function triggerDownload(url, filename) {
+async function triggerDownload(url, filename) {
   const proxyUrl = `/api/proxy?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`;
-  const a = document.createElement('a');
-  a.href = proxyUrl;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
   showToast('Đang tải xuống: ' + filename);
+  try {
+    const response = await fetch(proxyUrl);
+    if (!response.ok) throw new Error('Download failed');
+    const blob = await response.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(blobUrl);
+    showToast('Tải thành công: ' + filename);
+  } catch (err) {
+    console.error('Download error:', err);
+    showToast('Lỗi tải xuống. Vui lòng thử lại.');
+  }
 }
 
 function createDlButton(iconClass, iconSvg, title, subtitle, onClick) {
@@ -124,10 +135,16 @@ fetchBtn.addEventListener('click', fetchTikTokData);
 urlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') fetchTikTokData(); });
 
 // ===== Render Result =====
+function buildUrl(path) {
+  if (!path) return '';
+  const baseUrl = 'https://www.tikwm.com';
+  return path.startsWith('http') ? path : baseUrl + path;
+}
+
 function renderResult(data) {
   // Preview
   const cover = data.cover || data.origin_cover;
-  previewImage.src = cover ? `https://www.tikwm.com${cover}` : '';
+  previewImage.src = cover ? buildUrl(cover) : '';
   
   // Info
   resultAuthor.textContent = `@${data.author?.unique_id || data.author?.nickname || 'unknown'}`;
@@ -143,37 +160,32 @@ function renderResult(data) {
   slideshowGrid.innerHTML = '';
 
   const isSlideshow = data.images && data.images.length > 0;
-  const baseUrl = 'https://www.tikwm.com';
 
   if (!isSlideshow) {
     // === Video Downloads ===
-    
-    // Hàm phụ để chuẩn hóa URL (Tránh lỗi 2 lần https)
-    const getFullUrl = (url) => url.startsWith('http') ? url : baseUrl + url;
-
     if (data.play) {
       optionsGrid.appendChild(createDlButton('video', videoSvg,
         'Video không logo', 'MP4 • Chất lượng gốc',
-        () => triggerDownload(getFullUrl(data.play), `tiktok_${data.id}.mp4`)
+        () => triggerDownload(buildUrl(data.play), `tiktok_${data.id}.mp4`)
       ));
     }
     if (data.hdplay) {
       optionsGrid.appendChild(createDlButton('video', videoSvg,
         'Video HD không logo', 'MP4 • Chất lượng cao',
-        () => triggerDownload(getFullUrl(data.hdplay), `tiktok_hd_${data.id}.mp4`)
+        () => triggerDownload(buildUrl(data.hdplay), `tiktok_hd_${data.id}.mp4`)
       ));
     }
     if (data.wmplay) {
       optionsGrid.appendChild(createDlButton('video', videoSvg,
         'Video có logo', 'MP4 • Có watermark',
-        () => triggerDownload(getFullUrl(data.wmplay), `tiktok_wm_${data.id}.mp4`)
+        () => triggerDownload(buildUrl(data.wmplay), `tiktok_wm_${data.id}.mp4`)
       ));
     }
   } else {
     // === Slideshow Images ===
     slideshowSection.style.display = 'block';
     data.images.forEach((imgUrl, i) => {
-      const fullUrl = imgUrl.startsWith('http') ? imgUrl : baseUrl + imgUrl;
+      const fullUrl = buildUrl(imgUrl);
       const item = document.createElement('div');
       item.className = 'slide-item';
       item.innerHTML = `
@@ -190,7 +202,7 @@ function renderResult(data) {
 
     downloadAllImages.onclick = () => {
       data.images.forEach((imgUrl, i) => {
-        const fullUrl = imgUrl.startsWith('http') ? imgUrl : baseUrl + imgUrl;
+        const fullUrl = buildUrl(imgUrl);
         setTimeout(() => triggerDownload(fullUrl, `tiktok_slide_${data.id}_${i + 1}.jpg`), i * 500);
       });
     };
@@ -198,10 +210,9 @@ function renderResult(data) {
 
   // === Audio Download ===
   if (data.music) {
-    const musicUrl = data.music.startsWith('http') ? data.music : baseUrl + data.music;
     optionsGrid.appendChild(createDlButton('audio', audioSvg,
       'Âm thanh gốc', `MP3 • ${data.music_info?.title || 'Original Sound'}`,
-      () => triggerDownload(musicUrl, `tiktok_audio_${data.id}.mp3`)
+      () => triggerDownload(buildUrl(data.music), `tiktok_audio_${data.id}.mp3`)
     ));
   }
 
