@@ -147,22 +147,26 @@ function renderResult(data) {
 
   if (!isSlideshow) {
     // === Video Downloads ===
+    
+    // Hàm phụ để chuẩn hóa URL (Tránh lỗi 2 lần https)
+    const getFullUrl = (url) => url.startsWith('http') ? url : baseUrl + url;
+
     if (data.play) {
       optionsGrid.appendChild(createDlButton('video', videoSvg,
         'Video không logo', 'MP4 • Chất lượng gốc',
-        () => triggerDownload(baseUrl + data.play, `tiktok_${data.id}.mp4`)
+        () => triggerDownload(getFullUrl(data.play), `tiktok_${data.id}.mp4`)
       ));
     }
     if (data.hdplay) {
       optionsGrid.appendChild(createDlButton('video', videoSvg,
         'Video HD không logo', 'MP4 • Chất lượng cao',
-        () => triggerDownload(baseUrl + data.hdplay, `tiktok_hd_${data.id}.mp4`)
+        () => triggerDownload(getFullUrl(data.hdplay), `tiktok_hd_${data.id}.mp4`)
       ));
     }
     if (data.wmplay) {
       optionsGrid.appendChild(createDlButton('video', videoSvg,
         'Video có logo', 'MP4 • Có watermark',
-        () => triggerDownload(baseUrl + data.wmplay, `tiktok_wm_${data.id}.mp4`)
+        () => triggerDownload(getFullUrl(data.wmplay), `tiktok_wm_${data.id}.mp4`)
       ));
     }
   } else {
