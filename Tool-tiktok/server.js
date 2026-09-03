@@ -11,7 +11,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// === API LẤY INFO VIDEO (Giữ nguyên của bạn) ===
+// === API LẤY INFO VIDEO ===
 app.post('/api/download', async (req, res) => {
   try {
     const { url } = req.body;
@@ -22,24 +22,56 @@ app.post('/api/download', async (req, res) => {
       return res.status(400).json({ error: 'Please provide a valid TikTok URL' });
     }
 
-    const apiUrl = `https://www.tikwm.com/api/?url=${encodeURIComponent(url)}&hd=1`;
-    const response = await fetch(apiUrl, {
-      method: 'GET',
-      headers: {
-        Accept: 'application/json',
-        'User-Agent': 'Mozilla/5.0'
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      'Accept': 'application/json, text/plain, */*',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Referer': 'https://www.tikwm.com/'
+    };
+
+    let data = null;
+
+    // 1. Thử GET request tới TikWM API
+    try {
+      const apiUrl = `https://www.tikwm.com/api/?url=${encodeURIComponent(url)}&hd=1`;
+      const response = await fetch(apiUrl, { method: 'GET', headers });
+      const text = await response.text();
+      try {
+        const json = JSON.parse(text);
+        if (json.code === 0) data = json.data;
+      } catch (e) {
+        console.warn('GET TikWM returned non-JSON (possibly Cloudflare block)');
       }
-    });
-
-    const data = await response.json();
-
-    if (data.code !== 0) {
-      return res.status(400).json({ error: data.msg || 'Failed to fetch video data' });
+    } catch (e) {
+      console.warn('GET TikWM fetch failed:', e.message);
     }
 
-    res.json({ success: true, data: data.data });
+    // 2. Fallback sang POST nếu GET chưa lấy được dữ liệu
+    if (!data) {
+      try {
+        const postRes = await fetch('https://www.tikwm.com/api/', {
+          method: 'POST',
+          headers: {
+            ...headers,
+            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+          },
+          body: `url=${encodeURIComponent(url)}&hd=1`
+        });
+        const postText = await postRes.text();
+        const postJson = JSON.parse(postText);
+        if (postJson.code === 0) data = postJson.data;
+      } catch (e) {
+        console.warn('POST TikWM fetch failed:', e.message);
+      }
+    }
+
+    if (!data) {
+      return res.status(502).json({ error: 'Failed to fetch video data from TikTok service' });
+    }
+
+    res.json({ success: true, data });
   } catch (error) {
-    console.error('Error:', error.message);
+    console.error('Error in /api/download:', error.message);
     res.status(500).json({ error: 'Server error. Please try again.' });
   }
 });

@@ -51,7 +51,7 @@ async function triggerDownload(url, filename) {
   showToast('Đang tải xuống: ' + filename);
   try {
     const response = await fetch(proxyUrl);
-    if (!response.ok) throw new Error('Download failed');
+    if (!response.ok) throw new Error('Proxy download failed');
     const blob = await response.blob();
     const blobUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -63,8 +63,13 @@ async function triggerDownload(url, filename) {
     URL.revokeObjectURL(blobUrl);
     showToast('Tải thành công: ' + filename);
   } catch (err) {
-    console.error('Download error:', err);
-    showToast('Lỗi tải xuống. Vui lòng thử lại.');
+    console.warn('Proxy download failed, attempting direct download in new tab...', err);
+    try {
+      window.open(url, '_blank');
+      showToast('Đang mở file tải về trong tab mới...');
+    } catch (e2) {
+      showToast('Lỗi tải xuống. Vui lòng thử lại.');
+    }
   }
 }
 
@@ -111,21 +116,45 @@ async function fetchTikTokData() {
   setLoading(true);
 
   try {
-    const res = await fetch('/api/download', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url })
-    });
-    const json = await res.json();
+    let videoData = null;
 
-    if (!res.ok || !json.success) {
-      showError(json.error || 'Không thể lấy dữ liệu. Vui lòng thử lại.');
-      return;
+    // 1. Thử gọi qua Backend Server
+    try {
+      const res = await fetch('/api/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url })
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && json.data) {
+          videoData = json.data;
+        }
+      }
+    } catch (err) {
+      console.warn('Backend API thất bại, chuyển sang client fallback:', err);
     }
 
-    renderResult(json.data);
+    // 2. Client-side Fallback: Nếu Backend (Render) bị Cloudflare chặn IP datacenter,
+    // gọi trực tiếp từ trình duyệt người dùng (tikwm.com hỗ trợ CORS: Access-Control-Allow-Origin: *)
+    if (!videoData) {
+      console.log('Đang thử lấy dữ liệu trực tiếp từ TikWM qua trình duyệt...');
+      const clientRes = await fetch(`https://www.tikwm.com/api/?url=${encodeURIComponent(url)}&hd=1`, {
+        headers: { 'Accept': 'application/json' }
+      });
+      const clientJson = await clientRes.json();
+      if (clientJson.code === 0 && clientJson.data) {
+        videoData = clientJson.data;
+      } else {
+        showError(clientJson.msg || 'Không thể lấy dữ liệu video từ link này.');
+        return;
+      }
+    }
+
+    renderResult(videoData);
   } catch (err) {
-    showError('Lỗi kết nối. Vui lòng kiểm tra server.');
+    console.error('Fetch error:', err);
+    showError('Không thể lấy dữ liệu video. Vui lòng kiểm tra lại đường link hoặc thử lại sau.');
   } finally {
     setLoading(false);
   }
